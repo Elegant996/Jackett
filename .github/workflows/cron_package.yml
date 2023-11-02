@@ -1,0 +1,75 @@
+name: Package latest
+on:
+  push:
+  schedule:
+    - cron:  '0 * * * *'
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: ["amd64"]
+        include:
+          - arch: amd64
+            os: ubuntu-latest
+
+    steps:
+    - name: Set environment variables
+      id: env
+      run: |
+        eval "$(curl -sL --request GET \
+          --url "https://api.github.com/repos/Jackett/Jackett/releases" \
+          --header "Accept: application/vnd.github+json" \
+          --header "Authorization: token ${{ github.token }}" \
+          | jq -r '.[0] | "export TAG=\(.tag_name)"')"
+        
+        echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Sanitize repo slug
+      uses: actions/github-script@v6
+      id: repo_slug
+      with:
+        result-encoding: string
+        script: return '${{ github.repository }}'.toLowerCase()
+
+    - name: Check if image exists
+      uses: tyriis/docker-image-tag-exists@v2.0.1
+      id: image_exists
+      with:
+        registry: ghcr.io
+        repository: ${{ steps.repo_slug.outputs.result }}
+        tag: ${{ steps.env.outputs.VERSION }}
+    
+    - uses: actions/checkout@v4
+      if: ${{ steps.image_exists.outputs.tag != 'found' }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      if: ${{ steps.image_exists.outputs.tag != 'found' }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      if: ${{ steps.image_exists.outputs.tag != 'found' }}
+      with:
+        build-args: |
+          VERSION=${{ steps.env.outputs.VERSION }}
+        context: .
+        platforms: linux/${{ matrix.arch }}
+        push: true
+        tags: |
+          ghcr.io/${{ steps.repo_slug.outputs.result }}:${{ steps.env.outputs.VERSION }}
+          ghcr.io/${{ steps.repo_slug.outputs.result }}:latest
