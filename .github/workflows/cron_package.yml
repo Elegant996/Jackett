@@ -55,15 +55,15 @@ jobs:
         tag: ${{ steps.env.outputs.VERSION }}
     
     - uses: actions/checkout@v4
-      if: ${{ steps.image_exists.outputs.tag != 'found' }}
+      if: ${{ steps.image_exists.outputs.tag == 'not found' }}
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-      if: ${{ steps.image_exists.outputs.tag != 'found' }}
+      if: ${{ steps.image_exists.outputs.tag == 'not found' }}
 
     - name: Build and push
       uses: docker/build-push-action@v5
-      if: ${{ steps.image_exists.outputs.tag != 'found' }}
+      if: ${{ steps.image_exists.outputs.tag == 'not found' }}
       with:
         build-args: |
           VERSION=${{ steps.env.outputs.VERSION }}

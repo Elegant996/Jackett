@@ -37,6 +37,8 @@ ENV HOME /data
 WORKDIR $HOME
 CMD ["/opt/Jackett/jackett", "--NoUpdates", "--DataFolder=/data"]
 
-LABEL org.opencontainers.image.source="https://github.com/Jackett/Jackett"
 LABEL org.opencontainers.image.description="API Support for your favorite torrent trackers"
 LABEL org.opencontainers.image.licenses="GPL-2.0-only"
+LABEL org.opencontainers.image.source="https://github.com/Jackett/Jackett"
+LABEL org.opencontainers.image.title="Jackett"
+LABEL org.opencontainers.image.version="${VERSION}"
