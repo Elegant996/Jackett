@@ -74,10 +74,8 @@ jobs:
           ghcr.io/${{ steps.repo_slug.outputs.result }}:${{ steps.env.outputs.VERSION }}
           ghcr.io/${{ steps.repo_slug.outputs.result }}:latest
 
-    - uses: actions/delete-package-versions@v5
+    - name: ghcr.io Cleanup Action
+      uses: dataaxiom/ghcr-cleanup-action@v1.0.0
       if: ${{ steps.image_exists.outputs.tag != 'found' }}
-      with: 
-        package-name: 'jackett'
-        package-type: 'container'
-        min-versions-to-keep: 0
-        delete-only-untagged-versions: 'true'
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
