@@ -75,7 +75,7 @@ jobs:
           ghcr.io/${{ steps.repo_slug.outputs.result }}:latest
 
     - name: ghcr.io Cleanup Action
-      uses: dataaxiom/ghcr-cleanup-action@v1.0.0
+      uses: dataaxiom/ghcr-cleanup-action@v1.0.2
       if: ${{ steps.image_exists.outputs.tag != 'found' }}
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
