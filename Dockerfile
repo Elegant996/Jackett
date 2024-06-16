@@ -33,7 +33,7 @@ EXPOSE 9117
 VOLUME [ "/data" ]
 ENV HOME /data
 WORKDIR $HOME
-CMD ["/opt/Jackett/jackett", "--NoUpdates", "--DataFolder=/data"]
+CMD ["/opt/Jackett/jackett", "--NoUpdates"]
 
 LABEL org.opencontainers.image.description="API Support for your favorite torrent trackers"
 LABEL org.opencontainers.image.licenses="GPL-2.0-only"
