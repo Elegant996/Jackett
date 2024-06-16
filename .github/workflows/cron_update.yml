@@ -1,0 +1,71 @@
+name: Get latest version
+on:
+  schedule:
+    - cron:  '0 * * * *'
+
+jobs:
+  latest-tag:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: ["amd64"]
+        include:
+          - arch: amd64
+            os: ubuntu-latest
+
+    steps:
+    - name: Get upstream tag
+      id: upstream_tag
+      run: |
+        eval "$(curl -sL --request GET \
+          --url "https://api.github.com/repos/Jackett/Jackett/releases" \
+          --header "Accept: application/vnd.github+json" \
+          --header "Authorization: token ${{ github.token }}" \
+          | jq -r '.[0] | "export TAG=\(.tag_name)"')"
+        
+        echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+        echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
+
+    - name: Get current tag
+      id: current_tag
+      run: |
+        eval "$(curl -sL --request GET \
+          --url "https://api.github.com/repos/Elegant996/Jackett/tags" \
+          --header "Accept: application/vnd.github+json" \
+          --header "Authorization: token ${{ github.token }}" \
+          | jq -r '.[0] | "export TAG=\(.name)"')"
+        
+        echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+        echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
+
+    - name: Check if tag exists
+      uses: mukunku/tag-exists-action@v1.6.0
+      id: check_tag
+      with:
+        tag: '${{ steps.upstream_tag.outputs.TAG }}'
+
+    - uses: actions/checkout@v4
+      if: steps.check_tag.outputs.exists == 'false'
+
+    - name: Update Readme
+      uses: MathieuSoysal/file-updater-for-release@v1.0.3
+      if: steps.check_tag.outputs.exists == 'false'
+      with:
+        files: README.md
+        version: '${{ steps.upstream_tag.outputs.VERSION }}'
+        old-version: '${{ steps.current_tag.outputs.VERSION }}'
+        with-checkout: false
+    
+    - name: Push changes
+      uses: EndBug/add-and-commit@v9
+      if: steps.check_tag.outputs.exists == 'false'
+      with:
+        committer_name: GitHub Actions
+        committer_email: actions@github.com
+        message: 'docs: Bump image version to ${{ steps.upstream_tag.outputs.VERSION }}'
+        tag: '${{ steps.upstream_tag.outputs.TAG }}'

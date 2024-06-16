@@ -1,0 +1,112 @@
+name: Build release
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      packages: write
+
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: ["amd64"]
+        include:
+          - arch: amd64
+            os: ubuntu-latest
+
+    steps:
+    - name: Set environment variables
+      id: env
+      run: |
+        echo "VERSION=${GITHUB_REF//refs\/tags\/v}" >> $GITHUB_OUTPUT
+
+        eval "$(curl -sL --request GET \
+          --url "https://api.github.com/repos/Elegant996/Jackett/git/tags" \
+          --header "Accept: application/vnd.github+json" \
+          --header "Authorization: token ${{ github.token }}" \
+          | jq -r '.[0] | "export TAG=\(.tag_name)"')"
+        
+        echo "PREV_TAG=${TAG}" >> $GITHUB_OUTPUT
+        echo "PREV_VERSION=${PREV_TAG//v}" >> $GITHUB_OUTPUT
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Sanitize repo slug
+      uses: actions/github-script@v7
+      id: repo_slug
+      with:
+        result-encoding: string
+        script: return '${{ github.repository }}'.toLowerCase()
+    
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      continue-on-error: true
+      id: buildx1
+      with:
+        build-args: |
+          VERSION=${{ steps.env.outputs.VERSION }}
+        context: .
+        platforms: linux/${{ matrix.arch }}
+        push: true
+        tags: |
+          ghcr.io/${{ steps.repo_slug.outputs.result }}:${{ steps.env.outputs.VERSION }}
+          ghcr.io/${{ steps.repo_slug.outputs.result }}:latest
+
+    # Temp workaround for failed builds
+    - name: Wait to retry
+      if: steps.buildx1.outcome != 'success'
+      run: |
+        sleep 60
+
+    # Temp workaround for failed builds
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      if: steps.buildx1.outcome != 'success'
+      with:
+        build-args: |
+          VERSION=${{ steps.env.outputs.VERSION }}
+        context: .
+        platforms: linux/${{ matrix.arch }}
+        push: true
+        tags: |
+          ghcr.io/${{ steps.repo_slug.outputs.result }}:${{ steps.env.outputs.VERSION }}
+          ghcr.io/${{ steps.repo_slug.outputs.result }}:latest
+
+    - name: ghcr.io Cleanup Action
+      uses: dataaxiom/ghcr-cleanup-action@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get previous release tag
+      id: previous_release
+      uses: sammcoe/get-previous-release-action@v1
+
+    - name: Generate changelog
+      id: changelog
+      uses: metcalfc/changelog-generator@v4.3.1
+      with:
+        mytoken: ${{ secrets.GITHUB_TOKEN }}
+        base-ref: ${{ steps.previous_release.output.release }}
+
+    - name: Publish release
+      uses: ncipollo/release-action@v1.14.0
+      with:
+        body: |
+          Changes in this Release: 
+          ${{ steps.changelog.outputs.changelog }}
