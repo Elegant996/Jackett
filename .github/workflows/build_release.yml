@@ -2,7 +2,7 @@ name: Build release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - v*
 
 jobs:
   docker:
@@ -21,19 +21,29 @@ jobs:
             os: ubuntu-latest
 
     steps:
-    - name: Set environment variables
-      id: env
+    - name: Get current tag
+      id: current_tag
       run: |
-        echo "VERSION=${GITHUB_REF//refs\/tags\/v}" >> $GITHUB_OUTPUT
-
         eval "$(curl -sL --request GET \
-          --url "https://api.github.com/repos/Elegant996/Jackett/git/tags" \
+          --url "https://api.github.com/repos/Elegant996/Jackett/tags" \
           --header "Accept: application/vnd.github+json" \
           --header "Authorization: token ${{ github.token }}" \
-          | jq -r '.[0] | "export TAG=\(.tag_name)"')"
+          | jq -r '.[0] | "export TAG=\(.name)"')"
         
-        echo "PREV_TAG=${TAG}" >> $GITHUB_OUTPUT
-        echo "PREV_VERSION=${PREV_TAG//v}" >> $GITHUB_OUTPUT
+        echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+        echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
+
+    - name: Get previous tag
+      id: previous_tag
+      run: |
+        eval "$(curl -sL --request GET \
+          --url "https://api.github.com/repos/Elegant996/Jackett/tags" \
+          --header "Accept: application/vnd.github+json" \
+          --header "Authorization: token ${{ github.token }}" \
+          | jq -r '.[1] | "export TAG=\(.name)"')"
+        
+        echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+        echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
@@ -93,16 +103,13 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Get previous release tag
-      id: previous_release
-      uses: sammcoe/get-previous-release-action@v1
-
     - name: Generate changelog
       id: changelog
       uses: metcalfc/changelog-generator@v4.3.1
       with:
         mytoken: ${{ secrets.GITHUB_TOKEN }}
-        base-ref: ${{ steps.previous_release.output.release }}
+        head-ref: '${{ steps.current_tag.outputs.TAG }}'
+        base-ref: '${{ steps.previous_tag.outputs.TAG }}'
 
     - name: Publish release
       uses: ncipollo/release-action@v1.14.0
