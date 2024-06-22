@@ -21,36 +21,27 @@ jobs:
             os: ubuntu-latest
 
     steps:
-    - name: Get current tag
-      id: current_tag
+    - name: Set environment variables
+      id: env
       run: |
-        eval "$(curl -sL --request GET \
-          --url "https://api.github.com/repos/Elegant996/Jackett/tags" \
-          --header "Accept: application/vnd.github+json" \
-          --header "Authorization: token ${{ github.token }}" \
-          | jq -r '.[0] | "export TAG=\(.name)"')"
-        
-        echo "TAG=${TAG}" >> $GITHUB_OUTPUT
         echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
+      env:
+        TAG: ${{ github.ref_name }}
 
-    - name: Get previous tag
-      id: previous_tag
-      run: |
-        eval "$(curl -sL --request GET \
-          --url "https://api.github.com/repos/Elegant996/Jackett/tags" \
-          --header "Accept: application/vnd.github+json" \
-          --header "Authorization: token ${{ github.token }}" \
-          | jq -r '.[1] | "export TAG=\(.name)"')"
-        
-        echo "TAG=${TAG}" >> $GITHUB_OUTPUT
-        echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
+    - name: Get last release
+      uses: InsonusK/get-latest-release@v1.0.1
+      id: last_release
+      with:
+        myToken: ${{ github.token }}
+        exclude_types: "draft|prerelease"
+        view_top: 1
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        password: ${{ github.token }}
 
     - name: Sanitize repo slug
       uses: actions/github-script@v7
@@ -101,15 +92,14 @@ jobs:
     - name: ghcr.io Cleanup Action
       uses: dataaxiom/ghcr-cleanup-action@v1
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ github.token }}
 
     - name: Generate changelog
       id: changelog
       uses: metcalfc/changelog-generator@v4.3.1
       with:
-        mytoken: ${{ secrets.GITHUB_TOKEN }}
-        head-ref: '${{ steps.current_tag.outputs.TAG }}'
-        base-ref: '${{ steps.previous_tag.outputs.TAG }}'
+        mytoken: ${{ github.token }}
+        base-ref: '${{ steps.last_release.outputs.tag_name }}'
 
     - name: Publish release
       uses: ncipollo/release-action@v1.14.0
