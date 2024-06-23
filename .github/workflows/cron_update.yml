@@ -1,10 +1,14 @@
-name: Get latest version
+name: Get latest release
 on:
+  # Every hour
   schedule:
     - cron:  '0 * * * *'
+  # Or manually
+  workflow_dispatch:
 
 jobs:
   latest-tag:
+    name: Get latest tag
     runs-on: ubuntu-latest
 
     permissions:

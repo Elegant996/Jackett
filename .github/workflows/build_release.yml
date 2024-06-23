@@ -1,5 +1,6 @@
 name: Build release
 on:
+  # New tag
   push:
     tags:
       - v*
@@ -88,11 +89,6 @@ jobs:
         tags: |
           ghcr.io/${{ steps.repo_slug.outputs.result }}:${{ steps.env.outputs.VERSION }}
           ghcr.io/${{ steps.repo_slug.outputs.result }}:latest
-
-    - name: ghcr.io Cleanup Action
-      uses: dataaxiom/ghcr-cleanup-action@v1
-      with:
-        token: ${{ github.token }}
 
     - name: Generate changelog
       id: changelog
