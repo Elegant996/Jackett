@@ -1,0 +1,25 @@
+name: New release check
+on:
+  push:
+
+  # Hourly
+  schedule:
+    - cron:  '0 * * * *'
+
+  # Manually
+  workflow_dispatch:
+
+jobs:
+  masterPoll:
+    name: 'Poll master branch'
+    uses: ./.github/workflows/poll_releases.yml
+
+  masterBuild:
+    name: 'Build master branch'
+    uses:  ./.github/workflows/build_release.yml
+    if: ${{ needs.masterPoll.outputs.updateRequired == 'true' }}
+    needs: 
+    - masterPoll
+    with:
+      existingTag: '${{ needs.masterPoll.outputs.latestTag }}'
+      releaseVersion: '${{ needs.masterPoll.outputs.upstreamVersion }}'

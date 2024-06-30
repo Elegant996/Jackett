@@ -1,14 +1,26 @@
-name: Get latest release
+name: Poll branch releases
 on:
-  # Every hour
-  schedule:
-    - cron:  '0 * * * *'
-  # Or manually
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      branch:
+        description: 'App branch'
+        type: string
+        default: 'master'
+
+    outputs:
+      latestTag:
+        description: 'Current release tag'
+        value: '${{ jobs.check-latest.outputs.tag }}'
+      updateRequired:
+        description: 'New version found'
+        value: ${{ jobs.check-latest.outputs.update }}
+      upstreamVersion:
+        description: 'Upstream version'
+        value: '${{ jobs.check-latest.outputs.version }}'
 
 jobs:
-  latest-tag:
-    name: Get latest tag
+  check-latest:
+    name: Check latest version
     runs-on: ubuntu-latest
 
     permissions:
@@ -22,9 +34,14 @@ jobs:
           - arch: amd64
             os: ubuntu-latest
 
+    outputs:
+      tag: 'v${{ steps.current.outputs.VERSION }}'
+      update: ${{ steps.check_tag.outputs.exists == 'false' }}
+      version: '${{ steps.upstream.outputs.VERSION }}'
+
     steps:
-    - name: Get upstream tag
-      id: upstream_tag
+    - name: Get upstream version
+      id: upstream
       run: |
         eval "$(curl -sL --request GET \
           --url "https://api.github.com/repos/Jackett/Jackett/releases" \
@@ -32,39 +49,35 @@ jobs:
           --header "Authorization: token ${{ github.token }}" \
           | jq -r '.[0] | "export TAG=\(.tag_name)"')"
         
-        echo "TAG=${TAG}" >> $GITHUB_OUTPUT
         echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
 
-    - name: Get current tag
-      id: current_tag
+    - name: Get current release
+      id: current
       run: |
         eval "$(curl -sL --request GET \
-          --url "https://api.github.com/repos/Elegant996/Jackett/tags" \
+          --url "https://api.github.com/repos/Elegant996/Jackett/releases" \
           --header "Accept: application/vnd.github+json" \
           --header "Authorization: token ${{ github.token }}" \
-          | jq -r '.[0] | "export TAG=\(.name)"')"
-        
-        echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+          | jq -r '.[] | "export TAG=\(.tag_name)"')"
+
         echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
 
     - name: Check if tag exists
       uses: mukunku/tag-exists-action@v1.6.0
       id: check_tag
       with:
-        tag: '${{ steps.upstream_tag.outputs.TAG }}'
+        tag: 'v${{ steps.upstream.outputs.VERSION }}'
 
     - uses: actions/checkout@v4
       if: steps.check_tag.outputs.exists == 'false'
-      with:
-        token: '${{ secrets.PAT }}'
 
     - name: Update Readme
       uses: MathieuSoysal/file-updater-for-release@v1.0.3
       if: steps.check_tag.outputs.exists == 'false'
       with:
         files: README.md
-        version: '${{ steps.upstream_tag.outputs.VERSION }}'
-        old-version: '${{ steps.current_tag.outputs.VERSION }}'
+        version: '${{ steps.upstream.outputs.VERSION }}'
+        old-version: '${{ steps.current.outputs.VERSION }}'
         with-checkout: false
     
     - name: Push changes
@@ -73,5 +86,5 @@ jobs:
       with:
         committer_name: GitHub Actions
         committer_email: actions@github.com
-        message: 'docs: Bump image version to ${{ steps.upstream_tag.outputs.VERSION }}'
-        tag: '${{ steps.upstream_tag.outputs.TAG }}'
+        message: 'docs: Bump ${{ inputs.Branch }} image version to ${{ steps.upstream.outputs.VERSION }}'
+        tag: 'v${{ steps.upstream.outputs.VERSION }}'
