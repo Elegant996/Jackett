@@ -47,7 +47,7 @@ jobs:
           --url "https://api.github.com/repos/Jackett/Jackett/releases" \
           --header "Accept: application/vnd.github+json" \
           --header "Authorization: token ${{ github.token }}" \
-          | jq -r '.[0] | "export TAG=\(.tag_name)"')"
+          | jq -r 'first(.[]) | "export TAG=\(.tag_name)"')"
         
         echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
 
@@ -58,7 +58,7 @@ jobs:
           --url "https://api.github.com/repos/Elegant996/Jackett/releases" \
           --header "Accept: application/vnd.github+json" \
           --header "Authorization: token ${{ github.token }}" \
-          | jq -r '.[] | "export TAG=\(.tag_name)"')"
+          | jq -r 'first(.[]) | "export TAG=\(.tag_name)"')"
 
         echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
 
