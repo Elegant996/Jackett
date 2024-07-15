@@ -92,6 +92,7 @@ jobs:
       uses: metcalfc/changelog-generator@v4.3.1
       with:
         mytoken: ${{ github.token }}
+        head-ref: 'v${{ inputs.releaseVersion }}'
         base-ref: '${{ inputs.existingTag }}'
 
     - name: Publish release
