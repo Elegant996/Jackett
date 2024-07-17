@@ -86,5 +86,5 @@ jobs:
       with:
         committer_name: GitHub Actions
         committer_email: actions@github.com
-        message: 'docs: Bump ${{ inputs.Branch }} image version to ${{ steps.upstream.outputs.VERSION }}'
+        message: 'docs: Bump image version to ${{ steps.upstream.outputs.VERSION }}'
         tag: 'v${{ steps.upstream.outputs.VERSION }}'
