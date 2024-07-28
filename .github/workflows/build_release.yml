@@ -48,7 +48,7 @@ jobs:
     
     - uses: actions/checkout@v4
       with:
-        tag: '${{ inputs.existingTag }}'
+        ref: '${{ inputs.existingTag }}'
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
