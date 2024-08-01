@@ -54,11 +54,11 @@ jobs:
     - name: Get current release
       id: current
       run: |
-        eval "$(curl -sL --request GET \
+        TAG=$(curl -sL --request GET \
           --url "${{ github.api_url }}/repos/${{ github.repository }}/releases" \
           --header "Accept: application/vnd.github+json" \
           --header "Authorization: token ${{ github.token }}" \
-          | jq -r 'first(.[]) | "export TAG=\(.tag_name)"')"
+          | jq -r 'first(.[]) | .tag_name')
 
         echo "VERSION=${TAG//v}" >> $GITHUB_OUTPUT
 
