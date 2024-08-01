@@ -55,7 +55,7 @@ jobs:
       id: current
       run: |
         eval "$(curl -sL --request GET \
-          --url "https://api.github.com/repos/Elegant996/Jackett/releases" \
+          --url "${{ github.api_url }}/repos/${{ github.repository }}/releases" \
           --header "Accept: application/vnd.github+json" \
           --header "Authorization: token ${{ github.token }}" \
           | jq -r 'first(.[]) | "export TAG=\(.tag_name)"')"
