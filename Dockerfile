@@ -1,4 +1,4 @@
-FROM alpine:3.20 as stage
+FROM alpine:3.21 as stage
 
 ARG VERSION
 
@@ -10,7 +10,7 @@ RUN curl -o /tmp/jackett.tar.gz -sL "https://github.com/Jackett/Jackett/releases
 RUN tar xzf /tmp/jackett.tar.gz -C /opt/Jackett --strip-components=1
 RUN rm -rf /tmp/*
 
-FROM alpine:3.20 as mirror
+FROM alpine:3.21 as mirror
 
 RUN mkdir -p /out/etc/apk && cp -r /etc/apk/* /out/etc/apk/
 RUN apk add --no-cache --initdb -p /out \
