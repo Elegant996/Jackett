@@ -1,90 +1,277 @@
 name: Poll branch releases
 on:
-  workflow_call:
-    inputs:
-      branch:
-        description: 'App branch'
-        type: string
-        default: 'master'
+  push:
 
-    outputs:
-      latestTag:
-        description: 'Current release tag'
-        value: '${{ jobs.check-latest.outputs.tag }}'
-      updateRequired:
-        description: 'New version found'
-        value: ${{ jobs.check-latest.outputs.update }}
-      upstreamVersion:
-        description: 'Upstream version'
-        value: '${{ jobs.check-latest.outputs.version }}'
+  # Daily
+  schedule:
+    - cron:  '0 0 * * *'
+
+  # Manually
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  check-latest:
-    name: Check latest version
+  define-matrix:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
+    outputs:
+      branches: ${{ steps.branches.outputs.matrix }}
+
+    steps:
+      - name: Define branches
+        id: branches
+        run: |
+          echo 'matrix={"include":[{"branch":"master","prerelease":"false"},{"branch":"develop","prerelease":"true"}]}' >> $GITHUB_OUTPUT
+
+  check-upstream:
+    needs: [define-matrix]
+    name: Check upstream version
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: true
-      matrix:
-        arch: ["amd64"]
-        include:
-          - arch: amd64
-            os: ubuntu-latest
+      matrix: ${{ fromJSON(needs.define-matrix.outputs.branches) }}
 
     outputs:
-      tag: 'v${{ steps.current.outputs.version }}'
-      update: ${{ steps.check_tag.outputs.exists == 'false' }}
-      version: '${{ steps.upstream.outputs.version }}'
+      release-branch: ${{ steps.releases.outputs.release-branch }}
+      release-version: ${{ steps.releases.outputs.release-version }}
+      prerelease-branch: ${{ steps.releases.outputs.prerelease-branch }}
+      prerelease-version: ${{ steps.releases.outputs.prerelease-version }}
 
     steps:
-    - name: Get upstream version
-      id: upstream
-      run: |
-        TAG=$(curl -sL --request GET \
-          --url "https://api.github.com/repos/Jackett/Jackett/releases" \
-          --header "Accept: application/vnd.github+json" \
-          --header "Authorization: token ${{ github.token }}" \
-          | jq -r 'first(.[]) | .tag_name')
-        
-        echo "version=${TAG//v}" >> $GITHUB_OUTPUT
+      - name: Get upstream (pre)release
+        id: upstream
+        run: |
+          TAG=$(curl -sL --request GET \
+            --url "${{ github.api_url }}/repos/Jackett/Jackett/releases" \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: token ${{ github.token }}" \
+            | jq --argjson pr ${{ matrix.prerelease }} \
+            -r 'map(select(.prerelease==$pr)) | first | .tag_name // ""')
 
-    - name: Get current release
-      id: current
-      run: |
-        TAG=$(curl -sL --request GET \
-          --url "${{ github.api_url }}/repos/${{ github.repository }}/releases" \
-          --header "Accept: application/vnd.github+json" \
-          --header "Authorization: token ${{ github.token }}" \
-          | jq -r 'first(.[]) | .tag_name')
+          echo "version=${TAG//v}" >> $GITHUB_OUTPUT
 
-        echo "version=${TAG//v}" >> $GITHUB_OUTPUT
+      - name: Check if tag exists
+        uses: mukunku/tag-exists-action@v1.6.0
+        id: check-tag
+        with:
+          tag: 'v${{ steps.upstream.outputs.version }}'
 
-    - name: Check if tag exists
-      uses: mukunku/tag-exists-action@v1.6.0
-      id: check_tag
-      with:
-        tag: 'v${{ steps.upstream.outputs.version }}'
+      - name: Store releases
+        id: releases
+        if: ${{ !fromJSON(steps.check-tag.outputs.exists) }}
+        run: |
+            echo "${prerelease}-branch=${{ matrix.branch }}" >> "$GITHUB_OUTPUT"
+            echo "${prerelease}-version=${{ steps.upstream.outputs.version }}" >> "$GITHUB_OUTPUT"
+        env:
+          prerelease: ${{ !fromJSON(matrix.prerelease) && 'release' || 'prerelease' }}
 
-    - uses: actions/checkout@v4
-      if: steps.check_tag.outputs.exists == 'false'
+  commit-and-push:
+    needs: [check-upstream]
+    name: Push commits and release upstream version
+    runs-on: ubuntu-latest
 
-    - name: Update Readme
-      uses: MathieuSoysal/file-updater-for-release@v1.0.3
-      if: steps.check_tag.outputs.exists == 'false'
-      with:
-        files: README.md
-        version: '${{ steps.upstream.outputs.version }}'
-        old-version: '${{ steps.current.outputs.version }}'
-        with-checkout: false
+    outputs:
+      matrix-branch: ${{ steps.tag-matrix.outputs.matrix-branch }}
+      matrix-include: ${{ steps.tag-matrix.outputs.matrix-include }}
+
+    # Cannot use matrix in this instance
+    env:
+      release-branch: ${{ needs.check-upstream.outputs.release-branch }}
+      release-version: ${{ needs.check-upstream.outputs.release-version }}
+      prerelease-branch: ${{ needs.check-upstream.outputs.prerelease-branch }}
+      prerelease-version: ${{ needs.check-upstream.outputs.prerelease-version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
     
-    - name: Push changes
-      uses: EndBug/add-and-commit@v9
-      if: steps.check_tag.outputs.exists == 'false'
-      with:
-        committer_name: GitHub Actions
-        committer_email: actions@github.com
-        message: 'docs: Bump image version to ${{ steps.upstream.outputs.version }}'
-        tag: 'v${{ steps.upstream.outputs.version }}'
+      - name: Update Readme (release)
+        if: env.release-version != ''
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: ${{ vars.RELEASE_VERSION }}
+          replace: ${{ env.release-version }}
+          include: 'README.md'
+          regex: false
+
+      - name: Commit changes (release)
+        if: env.release-version != ''
+        uses: EndBug/add-and-commit@v9
+        with:
+          committer_name: GitHub Actions
+          committer_email: actions@github.com
+          message: 'docs: Bump ${{ env.release-branch }} image version to ${{ env.release-version }}'
+          push: false
+          tag: 'v${{ env.release-version }}'
+
+      - name: Update Readme (prerelease)
+        if: env.prerelease-version != ''
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: ${{ vars.PRERELEASE_VERSION }}
+          replace: ${{ env.prerelease-version }}
+          include: 'README.md'
+          regex: false
+
+      - name: Commit changes (prerelease)
+        if: env.prerelease-version != ''
+        uses: EndBug/add-and-commit@v9
+        with:
+          committer_name: GitHub Actions
+          committer_email: actions@github.com
+          message: 'docs: Bump ${{ env.prerelease-branch }} image version to ${{ env.prerelease-version }}'
+          push: false
+          tag: 'v${{ env.prerelease-version }}'
+
+      - name: Define tags
+        id: tag-matrix
+        run: |
+          if [[ -n "${{ env.release-version }}" ]] && [[ -n "${{ env.prerelease-version }}" ]]; then
+            echo 'matrix-branch=["master","develop"]' >> $GITHUB_OUTPUT
+            echo 'matrix-include=[{"tag":"v${{ env.release-version }}","version":"${{ env.release-version }}","branch":"${{ env.release-branch }}","prerelease":"false"},{"tag":"v${{ env.prerelease-version }}","version":"${{ env.prerelease-version }}","branch":"${{ env.prerelease-branch }}","prerelease":"true"}]' >> $GITHUB_OUTPUT
+          elif [[ -n "${{ env.release-version }}" ]]; then
+            echo 'matrix-branch=["master"]' >> $GITHUB_OUTPUT
+            echo 'matrix-include=[{"tag":"v${{ env.release-version }}","version":"${{ env.release-version }}","branch":"${{ env.release-branch }}","prerelease":"false"}]' >> $GITHUB_OUTPUT
+          elif [[ -n "${{ env.prerelease-version }}" ]]; then
+            echo 'matrix-branch=["develop"]' >> $GITHUB_OUTPUT
+            echo 'matrix-include=[{"tag":"v${{ env.prerelease-version }}","version":"${{ env.prerelease-version }}","branch":"${{ env.prerelease-branch }}","prerelease":"true"}]' >> $GITHUB_OUTPUT
+          else
+            echo "There is no GitHub tag reference, skipping"
+          fi
+
+      - name: Push commits
+        if: env.release-version != '' || env.prerelease-version != ''
+        run: |
+          git push
+
+  publish-release:
+    needs: [commit-and-push]
+    name: Publish releases
+    runs-on: ubuntu-latest
+    if: needs.commit-and-push.outputs.matrix-branch != ''
+
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.commit-and-push.outputs.matrix-include) }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Publish release
+        uses: ncipollo/release-action@v1
+        with:
+          prerelease: ${{ fromJSON(matrix.prerelease) }}
+          tag: ${{ matrix.tag }}
+          token: ${{ secrets.WF_PAT }}
+
+      - name: Update repository variables
+        run: |
+          if [[ "${{ !fromJSON(matrix.prerelease) }}" == "true" ]]; then
+            gh variable set RELEASE_VERSION --body "${{ matrix.version }}"
+          else
+            gh variable set PRERELEASE_VERSION --body "${{ matrix.version }}"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.VARS_PAT }}
+
+  build:
+    needs: [commit-and-push]
+    name: Build images
+    runs-on: ubuntu-latest
+    if: needs.commit-and-push.outputs.matrix-branch != ''
+
+    permissions:
+      packages: write
+
+    strategy:     
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        arch: ["amd64"]
+        branch: ${{ fromJSON(needs.commit-and-push.outputs.matrix-branch) }}
+        include: ${{ fromJSON(needs.commit-and-push.outputs.matrix-include) }}
+
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+
+      - name: Sanitize repo slug
+        uses: actions/github-script@v7
+        id: repo-slug
+        with:
+          result-encoding: string
+          script: return '${{ github.repository }}'.toLowerCase()
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ steps.repo-slug.outputs.result }}
+          tags: |
+            type=raw,priority=900,value=${{ matrix.version }}
+            type=raw,priority=800,value=${{ matrix.version }},suffix=-${{ matrix.branch }}
+            type=raw,priority=700,value=${{ matrix.branch }}
+          labels: |
+            org.opencontainers.image.source="https://github.com/Jackett/Jackett"
+            org.opencontainers.image.url="https://github.com/Jackett/Jackett"
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.tag }}
+
+      - uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: 'Jackett/Jackett'
+          version: 'tags/${{ matrix.tag }}'
+          file: 'Jackett.Binaries.LinuxMuslAMDx64.tar.gz'
+          target: 'jackett.tar.gz'
+          token: ${{ github.token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        continue-on-error: true
+        id: buildx1
+        with:
+          build-args: |
+            TAG=${{ matrix.tag }}
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # Temp workaround for failed builds
+      - name: Wait to retry
+        if: steps.buildx1.outcome != 'success'
+        run: |
+          sleep 60
+
+      # Temp workaround for failed builds
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        if: steps.buildx1.outcome != 'success'
+        with:
+          build-args: |
+            TAG=${{ matrix.tag }}
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

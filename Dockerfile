@@ -1,42 +1,32 @@
-FROM alpine:3.20 as stage
+FROM alpine:3.21 AS source
 
-ARG VERSION
+ADD ./jackett.tar.gz /
 
-RUN apk add --no-cache \
-    curl \
-    xz
-RUN mkdir -p /opt/Jackett
-RUN curl -o /tmp/jackett.tar.gz -sL "https://github.com/Jackett/Jackett/releases/download/v${VERSION}/Jackett.Binaries.LinuxMuslAMDx64.tar.gz"
-RUN tar xzf /tmp/jackett.tar.gz -C /opt/Jackett --strip-components=1
-RUN rm -rf /tmp/*
+FROM alpine:3.21 as build-sysroot
 
-FROM alpine:3.20 as mirror
+# Prepare sysroot
+RUN mkdir -p /sysroot/etc/apk && cp -r /etc/apk/* /sysroot/etc/apk/
 
-RUN mkdir -p /out/etc/apk && cp -r /etc/apk/* /out/etc/apk/
-RUN apk add --no-cache --initdb -p /out \
+# Fetch runtime dependencies
+RUN apk add --no-cache --initdb -p /sysroot \
     alpine-baselayout \
     busybox \
     icu-data-full \
     icu-libs \
     libcurl \
     tzdata
-RUN rm -rf /out/etc/apk /out/lib/apk /out/var/cache
+RUN rm -rf /sysroot/etc/apk /sysroot/lib/apk /sysroot/var/cache
 
+# Install entrypoint
+COPY --chmod=755 ./entrypoint.sh /sysroot/entrypoint.sh
+
+# Build image
 FROM scratch
-ENTRYPOINT []
-CMD []
-WORKDIR /
-COPY --from=mirror /out/ /
-COPY --from=stage /opt/Jackett /opt/Jackett/
+COPY --from=build-sysroot /sysroot/ /
 
 EXPOSE 9117
 VOLUME [ "/data" ]
-ENV HOME /data
+ENV HOME=/data
 WORKDIR $HOME
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/opt/Jackett/jackett", "--NoUpdates"]
-
-LABEL org.opencontainers.image.description="API Support for your favorite torrent trackers"
-LABEL org.opencontainers.image.licenses="GPL-2.0-only"
-LABEL org.opencontainers.image.source="https://github.com/Jackett/Jackett"
-LABEL org.opencontainers.image.title="Jackett"
-LABEL org.opencontainers.image.version=${VERSION}
