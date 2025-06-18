@@ -14,13 +14,21 @@ jobs:
       
       - name: Get previous release
         id: previous-release
-        uses: sammcoe/get-previous-release-action@v1
+        run: |
+          tag=$(curl -sL --request GET \
+            --url "${{ github.api_url }}/repos/${{ github.repository }}/releases" \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: token ${{ github.token }}" \
+            | jq -r 'nth(1) | .tag_name')
+        
+          echo "tag=${tag}" >> $GITHUB_OUTPUT
 
       - name: Generate changelog
         id: changelog
         uses: metcalfc/changelog-generator@v4.6.2
         with:
           mytoken: ${{ github.token }}
+          head-ref: ${{ github.ref_name }}
           base-ref: ${{ steps.previous-release.outputs.tag }}
 
       - name: Update release
