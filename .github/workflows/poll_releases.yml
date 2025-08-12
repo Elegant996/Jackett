@@ -86,8 +86,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
     
       - name: Update Readme (release)
         if: env.release-version != ''
