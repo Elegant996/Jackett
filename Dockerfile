@@ -17,6 +17,10 @@ RUN apk add --no-cache --initdb -p /sysroot \
     tzdata
 RUN rm -rf /sysroot/etc/apk /sysroot/lib/apk /sysroot/var/cache
 
+# Install Jackett to new system root
+RUN mkdir -p /sysroot/opt/Jackett
+COPY --from=source /Jackett /sysroot/opt/Jackett
+
 # Install entrypoint
 COPY --chmod=755 ./entrypoint.sh /sysroot/entrypoint.sh
 
