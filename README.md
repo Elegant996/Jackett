@@ -6,5 +6,5 @@ Docker
 This repo will periodically check Jackett for updates and build a container image from scratch using an Alpine base layout:
 
 ```
-docker pull ghcr.io/elegant996/jackett:0.24.153
+docker pull ghcr.io/elegant996/jackett:0.24.156
 ```
